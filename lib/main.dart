@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'sql_helper.dart'; // Impor file helper yang tadi kita buat
+import 'api_service.dart'; // API service milik kamu
 
 void main() {
   runApp(const MyApp());
@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'TP MOD 10 - SQFlite',
+      title: 'TP MOD 11 - SQFlite',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
@@ -30,50 +30,93 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // List untuk menampung data dari database
   List<Map<String, dynamic>> _dataList = [];
   bool _isLoading = true;
 
-  // Controller untuk TextField
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
 
-  // (READ) Fungsi untuk mengambil data dari database dan memperbarui UI
+  // =======================
+  // READ
+  // =======================
   void _refreshData() async {
-    setState(() {
-      _isLoading = true; // Mulai loading
-    });
-    final data = await SQLHelper.readItems();
-    setState(() {
-      _dataList = data;
-      _isLoading = false; // Selesai loading
-    });
+    setState(() => _isLoading = true);
+
+    try {
+      final items = await ApiService.fetchItems();
+      setState(() {
+        _dataList = items.map((e) => {
+              "id": e.id,
+              "title": e.title,
+              "description": e.description,
+              "createdAt": e.createdAt ?? "-",
+            }).toList();
+      });
+    } catch (e) {}
+
+    setState(() => _isLoading = false);
   }
 
   @override
   void initState() {
     super.initState();
-    _refreshData(); // Panggil fungsi ini saat aplikasi pertama kali dibuka
+    _refreshData();
   }
 
-  // (CREATE) Fungsi untuk menambahkan item baru
+  // =======================
+  // CREATE
+  // =======================
   Future<void> _addItem() async {
-    await SQLHelper.addItem(
-        _titleController.text, _descriptionController.text);
-    _refreshData(); // Perbarui UI setelah data ditambahkan
+    await ApiService.addItem(
+      _titleController.text,
+      _descriptionController.text,
+    );
+    _refreshData();
   }
 
-  // Fungsi untuk menampilkan BottomSheet (Form input)
-  // Ini adalah implementasi dari screenshot "Tambah Data Baru"
-  void _showForm() {
-    // Bersihkan controller setiap kali form dibuka
-    _titleController.text = '';
-    _descriptionController.text = '';
+  // =======================
+  // UPDATE
+  // =======================
+  Future<void> _updateItem(String id) async {
+    await ApiService.updateItem(
+      id,
+      _titleController.text,
+      _descriptionController.text,
+    );
+    _refreshData();
+  }
+
+  // =======================
+  // DELETE
+  // =======================
+  void _deleteItem(String id) async {
+    await ApiService.deleteItem(id);
+    _refreshData();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Data berhasil dihapus")),
+    );
+  }
+
+  // =======================
+  // FORM ADD & EDIT
+  // =======================
+  void _showForm(String? id) {
+    if (id != null) {
+      final existing =
+          _dataList.firstWhere((element) => element['id'] == id);
+
+      _titleController.text = existing['title'];
+      _descriptionController.text = existing['description'];
+    } else {
+      _titleController.text = '';
+      _descriptionController.text = '';
+    }
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       elevation: 5,
-      isScrollControlled: true, // Agar tidak tertutup keyboard
       builder: (_) => Container(
         padding: EdgeInsets.only(
           top: 15,
@@ -83,37 +126,55 @@ class _HomePageState extends State<HomePage> {
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              "Tambah Data Baru",
+              id == null ? "Tambah Data Baru" : "Edit Data",
               style: Theme.of(context).textTheme.titleLarge,
-              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 15),
-            // TextField untuk Title (Sesuai Poin 3)
+
             TextField(
               controller: _titleController,
               decoration: const InputDecoration(
-                  hintText: 'Title', border: OutlineInputBorder()),
+                  hintText: "Title", border: OutlineInputBorder()),
             ),
+
             const SizedBox(height: 10),
-            // TextField untuk Description (Sesuai Poin 3)
+
             TextField(
               controller: _descriptionController,
               decoration: const InputDecoration(
-                  hintText: 'Description', border: OutlineInputBorder()),
+                  hintText: "Description", border: OutlineInputBorder()),
             ),
+
             const SizedBox(height: 20),
-            // Tombol "Save"
+
             ElevatedButton(
               onPressed: () async {
-                // Simpan data ke database (Sesuai Poin 3)
-                await _addItem();
-                // Tutup bottom sheet
-                Navigator.of(context).pop();
+                final title = _titleController.text.trim();
+                final desc = _descriptionController.text.trim();
+
+                if (title.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Title tidak boleh kosong")),
+                  );
+                  return;
+                }
+
+                try {
+                  if (id == null) {
+                    await _addItem();
+                  } else {
+                    await _updateItem(id);
+                  }
+                  Navigator.pop(context);
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Gagal menyimpan data: $e")),
+                  );
+                }
               },
-              child: const Text('Save'),
+              child: Text(id == null ? "Save" : "Update"),
             )
           ],
         ),
@@ -124,50 +185,65 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('TP MOD 10 - SQFlite'),
-      ),
-      // Tombol (+) untuk menambah data
+      appBar: AppBar(title: const Text('TP MOD 11 - SQFlite')),
+
       floatingActionButton: FloatingActionButton(
         child: const Icon(Icons.add),
-        onPressed: () => _showForm(), // Memanggil form input
+        onPressed: () => _showForm(null),
       ),
-      // Menampilkan data (Sesuai Poin 3)
+
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _dataList.isEmpty
-              // Tampilan jika data kosong (Sesuai Screenshot 1)
               ? const Center(
                   child: Text(
                     "Belum ada data",
                     style: TextStyle(fontSize: 18, color: Colors.grey),
                   ),
                 )
-              // Tampilan jika data ada (Sesuai Screenshot 3)
               : ListView.builder(
                   itemCount: _dataList.length,
-                  itemBuilder: (context, index) => Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                  itemBuilder: (context, i) => Card(
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
                     child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Menampilkan Title
-                          Text(
-                            _dataList[index]['title'],
-                            style: const TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _dataList[i]['title'],
+                                  style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(_dataList[i]['description']),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _dataList[i]['createdAt'],
+                                  style: const TextStyle(
+                                      fontSize: 10, color: Colors.grey),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          // Menampilkan Description
-                          Text(_dataList[index]['description']),
-                          const SizedBox(height: 8),
-                          // Menampilkan Waktu (dari kolom createdAt)
-                          Text(
-                            _dataList[index]['createdAt'],
-                            style: const TextStyle(fontSize: 10, color: Colors.grey),
-                          ),
+                          Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () => _showForm(_dataList[i]['id']), 
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _deleteItem(_dataList[i]['id']), 
+                            ),
+                          ],
+                        )
                         ],
                       ),
                     ),

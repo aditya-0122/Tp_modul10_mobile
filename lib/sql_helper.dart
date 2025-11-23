@@ -2,12 +2,8 @@ import 'package:sqflite/sqflite.dart' as sql;
 import 'package:path/path.dart' as path;
 
 class SQLHelper {
-  
-  // Sesuai permintaan tugas: createTable()
-  // Fungsi ini membuat tabel. Saya akan beri nama tabel 'items'
-  // dengan kolom 'title' dan 'description' sesuai contoh UI.
   static Future<void> createTable(sql.Database database) async {
-    await database.execute("""CREATE TABLE items (
+    await database.execute("""CREATE TABLE item (
       id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
       title TEXT,
       description TEXT,
@@ -15,35 +11,59 @@ class SQLHelper {
     )""");
   }
 
-  // Sesuai permintaan tugas: db()
-  // Fungsi ini akan membuka (atau membuat) database.
   static Future<sql.Database> db() async {
     final dbPath = await sql.getDatabasesPath();
     return sql.openDatabase(
-      path.join(dbPath, 'module10.db'), // Nama database
+      path.join(dbPath, 'module10.db'),
       version: 1,
       onCreate: (sql.Database database, int version) async {
-        // Panggil createTable saat database pertama kali dibuat
         await createTable(database);
       },
     );
   }
 
-  // Sesuai permintaan tugas: addItem() (Fitur CREATE)
-  // Menambahkan data baru ke tabel 'items'.
   static Future<int> addItem(String title, String? description) async {
-    final db = await SQLHelper.db(); // Buka database
-
+    final db = await SQLHelper.db();
     final data = {'title': title, 'description': description};
-    final id = await db.insert('items', data,
-        conflictAlgorithm: sql.ConflictAlgorithm.replace);
+
+    final id = await db.insert(
+      'item',
+      data,
+      conflictAlgorithm: sql.ConflictAlgorithm.replace,
+    );
     return id;
   }
 
-  // Sesuai permintaan tugas: readItem() (Fitur READ)
-  // Mengambil seluruh data dari tabel 'items'.
-  static Future<List<Map<String, dynamic>>> readItems() async {
-    final db = await SQLHelper.db(); // Buka database
-    return db.query('items', orderBy: "id DESC"); // Urutkan dari yg terbaru
+  static Future<List<Map<String, dynamic>>> readItem() async {
+    final db = await SQLHelper.db();
+    return db.query('item', orderBy: "id DESC");
+  }
+
+
+  static Future<int> updateItem(
+    int id,
+    String title,
+    String? description,
+  ) async {
+    final db = await SQLHelper.db();
+
+    final data = {
+      'title': title,
+      'description': description,
+      'createdAt': DateTime.now().toString(), // optional, update waktu
+    };
+
+    final result = await db.update(
+      'item',
+      data,
+      where: "id = ?",
+      whereArgs: [id],
+    );
+    return result;
+  }
+
+  static Future<void> deleteItem(int id) async {
+    final db = await SQLHelper.db();
+    await db.delete('item', where: "id = ?", whereArgs: [id]);
   }
 }
